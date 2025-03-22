@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Тестовий імпорт замовлень{% endblock %}
+{% block content %}
+  <h2>Тестовий імпорт замовлень (10 останніх)</h2>
+  {% if message %}
+    <div class="alert alert-info">{{ message }}</div>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">Імпортувати замовлення</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Аналітика замовлень{% endblock %}
+{% block content %}
+  <h2 class="mb-4">Аналітика замовлень: Розподіл за статусами</h2>
+  <div class="row">
+    <div class="col-md-6">
+      <div class="chart-container">
+        <canvas id="ordersChart"></canvas>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="chart-container">
+        <canvas id="anotherChart"></canvas>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+{% block extra_scripts %}
+  <!-- Підключення Chart.js через CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const chartData = JSON.parse('{{ chart_data|escapejs }}');
+
+    // Кругова діаграма (pie chart) для розподілу замовлень за статусами
+    const ctx = document.getElementById('ordersChart').getContext('2d');
+    const ordersChart = new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: chartData.labels,
+        datasets: [{
+          label: 'Відсоток замовлень',
+          data: chartData.percentages,
+          backgroundColor: [
+            'rgba(255, 99, 132, 0.6)',
+            'rgba(54, 162, 235, 0.6)',
+            'rgba(255, 206, 86, 0.6)',
+            'rgba(75, 192, 192, 0.6)',
+            'rgba(153, 102, 255, 0.6)',
+            'rgba(255, 159, 64, 0.6)'
+          ],
+          borderColor: [
+            'rgba(255, 99, 132, 1)',
+            'rgba(54, 162, 235, 1)',
+            'rgba(255, 206, 86, 1)',
+            'rgba(75, 192, 192, 1)',
+            'rgba(153, 102, 255, 1)',
+            'rgba(255, 159, 64, 1)'
+          ],
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                let label = context.label || '';
+                let value = context.parsed;
+                return label + ': ' + value + '%';
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Приклад для іншої діаграми (bar chart), який відображає абсолютну кількість замовлень за статусами
+    const ctx2 = document.getElementById('anotherChart').getContext('2d');
+    const anotherChart = new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: chartData.labels,
+        datasets: [{
+          label: 'Кількість замовлень',
+          data: chartData.counts,
+          backgroundColor: 'rgba(75, 192, 192, 0.6)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+  </script>
+{% endblock %}

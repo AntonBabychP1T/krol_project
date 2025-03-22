@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Dashboard</h2>
+  <div>
+    {% if chart_html %}
+      {{ chart_html|safe }}
+    {% else %}
+      <p>No data available yet.</p>
+    {% endif %}
+  </div>
+  <h3>Your Stores</h3>
+  <ul>
+    {% for store in stores %}
+      <li>{{ store.store_name }}</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

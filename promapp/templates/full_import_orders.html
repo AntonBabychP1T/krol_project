@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Повний імпорт замовлень{% endblock %}
+{% block content %}
+  <h2>Повний імпорт замовлень</h2>
+  {% if message %}
+    <div class="alert alert-info">{{ message }}</div>
+  {% endif %}
+  <form method="post" class="row g-3">
+    {% csrf_token %}
+    <div class="col-md-6">
+      {{ form.start_date.label_tag }} {{ form.start_date }}
+    </div>
+    <div class="col-md-6">
+      {{ form.end_date.label_tag }} {{ form.end_date }}
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary">Перевірити та імпортувати</button>
+    </div>
+  </form>
+{% endblock %}
