@@ -18,6 +18,7 @@
           <th>Магазин</th>
           <th>Статус</th>
           <th>Ціна</th>
+          <th>Комісія prosale</th>
         </tr>
       </thead>
       <tbody>
@@ -29,6 +30,13 @@
             <td>{{ order.store.store_name }}</td>
             <td>{{ order.status_name }}</td>
             <td>{{ order.full_price }}</td>
+            <td>
+              {% if order.cpa_commission and order.cpa_commission.amount %}
+                {{ order.cpa_commission.amount }} 
+              {% else %}
+                -
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

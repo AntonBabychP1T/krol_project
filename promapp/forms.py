@@ -47,3 +47,7 @@ class StoreForm(forms.ModelForm):
             'store_name': 'Назва магазину',
             'api_key': 'API ключ',
         }
+
+class CommissionAnalyticsForm(forms.Form):
+    start_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}), label="Дата початку")
+    end_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date'}), label="Дата завершення")

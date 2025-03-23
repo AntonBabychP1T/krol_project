@@ -1,88 +1,68 @@
 {% extends 'base.html' %}
 {% block title %}Аналітика замовлень{% endblock %}
 {% block content %}
-  <h2 class="mb-4">Аналітика замовлень: Розподіл за статусами</h2>
-  <div class="row">
-    <div class="col-md-6">
-      <div class="chart-container">
-        <canvas id="ordersChart"></canvas>
-      </div>
+  <h2>Аналітика замовлень: Розподіл за статусами</h2>
+  <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+    <div style="flex: 1; min-width: 300px; max-width: 400px; height: 300px;">
+      <canvas id="statusChart" width="300" height="300" style="display: block; margin: auto;"></canvas>
     </div>
-    <div class="col-md-6">
-      <div class="chart-container">
-        <canvas id="anotherChart"></canvas>
-      </div>
+    <div style="flex: 1; min-width: 300px; max-width: 400px; height: 300px;">
+      <canvas id="commissionChart" width="300" height="300" style="display: block; margin: auto;"></canvas>
     </div>
   </div>
-{% endblock %}
-{% block extra_scripts %}
-  <!-- Підключення Chart.js через CDN -->
+  
+  <h2>Аналітика комісії</h2>
+  <form method="get" style="max-width: 400px; margin: 20px auto;">
+    {{ commission_form.as_p }}
+    <button type="submit" class="btn btn-primary">Оновити дані</button>
+  </form>
+  
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
-    const chartData = JSON.parse('{{ chart_data|escapejs }}');
-
-    // Кругова діаграма (pie chart) для розподілу замовлень за статусами
-    const ctx = document.getElementById('ordersChart').getContext('2d');
-    const ordersChart = new Chart(ctx, {
+    // Графік розподілу замовлень за статусами
+    var statusChartData = {{ status_chart_data|safe }};
+    var ctx = document.getElementById('statusChart').getContext('2d');
+    new Chart(ctx, {
       type: 'pie',
       data: {
-        labels: chartData.labels,
+        labels: statusChartData.labels,
         datasets: [{
-          label: 'Відсоток замовлень',
-          data: chartData.percentages,
-          backgroundColor: [
-            'rgba(255, 99, 132, 0.6)',
-            'rgba(54, 162, 235, 0.6)',
-            'rgba(255, 206, 86, 0.6)',
-            'rgba(75, 192, 192, 0.6)',
-            'rgba(153, 102, 255, 0.6)',
-            'rgba(255, 159, 64, 0.6)'
-          ],
-          borderColor: [
-            'rgba(255, 99, 132, 1)',
-            'rgba(54, 162, 235, 1)',
-            'rgba(255, 206, 86, 1)',
-            'rgba(75, 192, 192, 1)',
-            'rgba(153, 102, 255, 1)',
-            'rgba(255, 159, 64, 1)'
-          ],
-          borderWidth: 1
+          data: statusChartData.counts,
+          backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
         }]
       },
       options: {
         responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                let label = context.label || '';
-                let value = context.parsed;
-                return label + ': ' + value + '%';
-              }
-            }
-          }
-        }
+        maintainAspectRatio: false
       }
     });
 
-    // Приклад для іншої діаграми (bar chart), який відображає абсолютну кількість замовлень за статусами
-    const ctx2 = document.getElementById('anotherChart').getContext('2d');
-    const anotherChart = new Chart(ctx2, {
-      type: 'bar',
+    // Графік комісії: лінійний графік з медіаною по днях та загальною середньою комісією
+    var commissionChartData = {{ commission_chart_data|safe }};
+    var ctx2 = document.getElementById('commissionChart').getContext('2d');
+    new Chart(ctx2, {
+      type: 'line',
       data: {
-        labels: chartData.labels,
+        labels: commissionChartData.labels,
         datasets: [{
-          label: 'Кількість замовлень',
-          data: chartData.counts,
-          backgroundColor: 'rgba(75, 192, 192, 0.6)',
-          borderColor: 'rgba(75, 192, 192, 1)',
-          borderWidth: 1
+          label: 'Медіанна комісія',
+          data: commissionChartData.daily_medians,
+          borderColor: 'blue',
+          fill: false
+        }, {
+          label: 'Середня комісія',
+          data: commissionChartData.labels.map(() => commissionChartData.overall_avg),
+          borderColor: 'red',
+          borderDash: [5, 5],
+          fill: false
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true }
+        }
       }
     });
   </script>

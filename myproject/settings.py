@@ -80,3 +80,5 @@ LOGOUT_REDIRECT_URL = 'index'
 
 # Ключ для шифрування API-ключів
 ENCRYPTION_KEY = env('ENCRYPTION_KEY')
+
+LOGIN_URL = '/login/'
