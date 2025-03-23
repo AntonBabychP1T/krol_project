@@ -2,4 +2,5 @@ Django>=3.2,<4.0
 gunicorn
 requests
 psycopg2-binary
-
+django-environ==0.8.1
+cryptography

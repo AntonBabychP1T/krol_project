@@ -1,12 +1,20 @@
 {% extends 'base.html' %}
 {% block title %}Тестовий імпорт замовлень{% endblock %}
 {% block content %}
-  <h2>Тестовий імпорт замовлень (10 останніх)</h2>
+  <h2>Тестовий імпорт замовлень (10 останніх) для магазину</h2>
   {% if message %}
     <div class="alert alert-info">{{ message }}</div>
   {% endif %}
   <form method="post">
     {% csrf_token %}
+    <div class="mb-3">
+      <label for="store" class="form-label">Виберіть магазин:</label>
+      <select name="store" id="store" class="form-select">
+        {% for store in stores %}
+          <option value="{{ store.id }}">{{ store.store_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <button type="submit" class="btn btn-primary">Імпортувати замовлення</button>
   </form>
 {% endblock %}

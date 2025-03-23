@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Профіль користувача{% endblock %}
+{% block content %}
+  <h2>Профіль користувача</h2>
+  <p>Привіт, {{ request.user.username }}!</p>
+  
+  <h3>Ваші магазини</h3>
+  {% if stores %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Назва магазину</th>
+          <th>API ключ</th>
+          <th>Дата створення</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for store in stores %}
+          <tr>
+            <td>{{ store.store_name }}</td>
+            <td>{{ store.obfuscated_api_key }}</td>
+            <td>{{ store.created_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>У вас немає магазинів. Будь ласка, додайте магазин.</p>
+  {% endif %}
+  
+  <h3>Додати магазин</h3>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-primary">Додати магазин</button>
+  </form>
+{% endblock %}
