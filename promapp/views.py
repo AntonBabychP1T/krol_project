@@ -1,19 +1,22 @@
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from statistics import median
 
+from django.db.models import Count, Sum
 from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
-from django.db.models import Count
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth import login, logout
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 import requests
 from datetime import datetime
 import os
 
 from .forms import (
-    OrderImportForm, OrderFullImportForm, OrderFilterForm, 
+    OrderImportForm, OrderFilterForm, 
     StoreForm, CommissionAnalyticsForm
 )
 from .models import Order, Product, Store
@@ -136,126 +139,149 @@ def analytics(request):
 
 @login_required
 def import_orders_view(request):
-    message = ""
+    """
+    Сторінка імпорту: вибір магазину + періоду, повідомлення про результат.
+    """
     user_stores = request.user.stores.all()
-    if request.method == "POST":
-        store_id = request.POST.get('store')
+    form = OrderImportForm(request.POST or None)
+    message = ""
+
+    if request.method == "POST" and form.is_valid():
+        store_id = request.POST.get("store")
+        period = form.cleaned_data["period"]
+
         if not store_id:
             message = "Виберіть магазин!"
         else:
             try:
                 store = user_stores.get(id=store_id)
-                message = import_orders_for_store(store, period='test')
+                message = import_orders_for_store(store, period=period)
             except Store.DoesNotExist:
                 message = "Магазин не знайдено!"
-    return render(request, 'import_orders.html', {'message': message, 'stores': user_stores})
 
-@login_required
-def import_full_orders_view(request):
-    message = ""
-    user_stores = request.user.stores.all()
-    if request.method == "POST":
-        form = OrderFullImportForm(request.POST)
-        store_id = request.POST.get('store')
-        if form.is_valid() and store_id:
-            try:
-                store = user_stores.get(id=store_id)
-                start_date = form.cleaned_data['start_date']
-                end_date = form.cleaned_data['end_date']
-                date_from = start_date.strftime("%Y-%m-%dT00:00:00")
-                date_to = end_date.strftime("%Y-%m-%dT23:59:59")
-                message = import_orders_full(date_from, date_to, store)
-            except Store.DoesNotExist:
-                message = "Магазин не знайдено!"
-    else:
-        form = OrderFullImportForm()
-    return render(request, 'full_import_orders.html', {'form': form, 'message': message, 'stores': user_stores})
+    context = {
+        "stores": user_stores,
+        "form": form,
+        "message": message,
+    }
+    return render(request, "import_orders.html", context)
 
-def import_orders_for_store(store, period='all'):
-    url = "https://my.prom.ua/api/v1/orders/list"
-    API_TOKEN = store.api_key
+
+
+def _to_decimal(val):
+    """Безпечний Decimal → використовується лише для DecimalField."""
+    if val in (None, "", "null"):
+        return Decimal("0")
+    if isinstance(val, (int, float, Decimal)):
+        return Decimal(str(val))
+    if isinstance(val, str):
+        val = val.replace(",", ".").strip()
+    try:
+        return Decimal(val)
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+
+
+def import_orders_for_store(store, period="all"):
+    base_url = getattr(store, "base_domain", "https://my.prom.ua")
+    url = f"{base_url}/api/v1/orders/list"
     headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
+        "Authorization": f"Bearer {store.api_key}",
         "Content-Type": "application/json",
     }
-    params = {}
-    if period == '1_day':
-        params['date_from'] = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
-    elif period == '7_days':
-        params['date_from'] = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
-    elif period == '30_days':
-        params['date_from'] = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
-    elif period == 'test':
-        params['limit'] = 10
-    else:
-        params['limit'] = 100
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-    except requests.exceptions.RequestException as e:
-        return f"Помилка запиту до API: {e}"
-    if response.status_code == 200:
-        orders_data = response.json().get('orders', [])
-        new_orders = 0
-        updated_orders = 0
-        for order_data in orders_data:
+
+    now = datetime.utcnow()
+    fltr = {}
+    if period == "1_day":
+        fltr["date_from"] = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    elif period == "7_days":
+        fltr["date_from"] = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    elif period == "30_days":
+        fltr["date_from"] = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    limit = 10 if period == "test" else 100
+    offset = 0
+    fetched = new_orders = updated_orders = 0
+
+    while True:
+        params = {**fltr, "limit": limit, "offset": offset}
+
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+        except requests.exceptions.RequestException as exc:
+            return f"Помилка запиту до API: {exc}"
+
+        if resp.status_code != 200:
+            return f"Помилка при імпорті даних: {resp.status_code} – {resp.text}"
+
+        orders_chunk = resp.json().get("orders", [])
+        if not orders_chunk:
+            break
+
+        for data in orders_chunk:
             order, created = Order.objects.update_or_create(
-                id=order_data["id"],
+                pk=data["id"],
                 defaults={
                     "store": store,
-                    "date_created": order_data.get("date_created"),
-                    "client_first_name": order_data.get("client_first_name"),
-                    "client_second_name": order_data.get("client_second_name"),
-                    "client_last_name": order_data.get("client_last_name"),
-                    "client_id": order_data.get("client_id"),
-                    "client_notes": order_data.get("client_notes"),
-                    "phone": order_data.get("phone"),
-                    "email": order_data.get("email"),
-                    "price": order_data.get("price"),
-                    "full_price": order_data.get("full_price"),
-                    "delivery_address": order_data.get("delivery_address"),
-                    "delivery_cost": order_data.get("delivery_cost"),
-                    "status": order_data.get("status"),
-                    "status_name": order_data.get("status_name"),
-                    "source": order_data.get("source"),
-                    "has_order_promo_free_delivery": order_data.get("has_order_promo_free_delivery"),
-                    "dont_call_customer_back": order_data.get("dont_call_customer_back"),
-                    "delivery_option": order_data.get("delivery_option"),
-                    "delivery_provider_data": order_data.get("delivery_provider_data"),
-                    "payment_option": order_data.get("payment_option"),
-                    "payment_data": order_data.get("payment_data"),
-                    "utm": order_data.get("utm"),
-                    "cpa_commission": order_data.get("cpa_commission"),
-                    "ps_promotion": order_data.get("ps_promotion"),
-                    "cancellation": order_data.get("cancellation"),
-                }
+                    "date_created": parse_datetime(data.get("date_created")) or timezone.now(),
+                    "client_first_name": data.get("client_first_name"),
+                    "client_second_name": data.get("client_second_name"),
+                    "client_last_name": data.get("client_last_name"),
+                    "client_id": data.get("client_id"),
+                    "client_notes": data.get("client_notes"),
+                    "phone": data.get("phone"),
+                    "email": data.get("email"),
+                    "price": _to_decimal(data.get("price")),
+                    "full_price": _to_decimal(data.get("full_price")),
+                    "delivery_address": data.get("delivery_address"),
+                    "delivery_cost": _to_decimal(data.get("delivery_cost")),
+                    "status": data.get("status"),
+                    "status_name": data.get("status_name"),
+                    "source": data.get("source"),
+                    "has_order_promo_free_delivery": data.get("has_order_promo_free_delivery"),
+                    "dont_call_customer_back": data.get("dont_call_customer_back"),
+                    "delivery_option": data.get("delivery_option"),
+                    "delivery_provider_data": data.get("delivery_provider_data"),
+                    "payment_option": data.get("payment_option"),
+                    "payment_data": data.get("payment_data"),
+                    "utm": data.get("utm"),
+                    # JSONField — зберігаємо цілий об’єкт як прийшов
+                    "cpa_commission": data.get("cpa_commission"),
+                    "ps_promotion": data.get("ps_promotion"),
+                    "cancellation": data.get("cancellation"),
+                },
             )
             if created:
                 new_orders += 1
             else:
                 updated_orders += 1
-            for product_data in order_data.get("products", []):
-                ext_id = product_data.get("external_id")
-                if not ext_id:
-                    ext_id = str(product_data.get("id"))
+
+            for prod in data.get("products", []):
+                ext_id = prod.get("external_id") or str(prod.get("id"))
                 Product.objects.update_or_create(
                     order=order,
                     external_id=ext_id,
                     defaults={
-                        "image": product_data.get("image"),
-                        "quantity": product_data.get("quantity"),
-                        "price": product_data.get("price"),
-                        "url": product_data.get("url"),
-                        "name": product_data.get("name"),
-                        "name_multilang": product_data.get("name_multilang"),
-                        "total_price": product_data.get("total_price"),
-                        "measure_unit": product_data.get("measure_unit"),
-                        "sku": product_data.get("sku"),
-                        "cpa_commission": product_data.get("cpa_commission"),
-                    }
+                        "image": prod.get("image"),
+                        "quantity": prod.get("quantity"),
+                        "price": _to_decimal(prod.get("price")),
+                        "url": prod.get("url"),
+                        "name": prod.get("name"),
+                        "name_multilang": prod.get("name_multilang"),
+                        "total_price": _to_decimal(prod.get("total_price")),
+                        "measure_unit": prod.get("measure_unit"),
+                        "sku": prod.get("sku"),
+                        # теж JSONField
+                        "cpa_commission": prod.get("cpa_commission"),
+                    },
                 )
-        return f"Імпортовано {len(orders_data)} замовлень: {new_orders} нових, {updated_orders} оновлено."
-    else:
-        return f"Помилка при імпорті даних: {response.status_code}"
+
+        fetched += len(orders_chunk)
+        if len(orders_chunk) < limit or period in {"1_day", "7_days", "30_days", "test"}:
+            break
+        offset += limit
+
+    return f"Імпортовано {fetched} замовлень: {new_orders} нових, {updated_orders} оновлено."
 
 @login_required
 def user_profile(request):

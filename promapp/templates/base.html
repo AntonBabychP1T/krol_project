@@ -31,11 +31,9 @@
                <a class="nav-link" href="{% url 'analytics' %}">Аналітика</a>
              </li>
              <li class="nav-item">
-               <a class="nav-link" href="{% url 'import_orders_view' %}">Тестовий імпорт</a>
+               <a class="nav-link" href="{% url 'import_orders_view' %}">Імпорт</a>
              </li>
-             <li class="nav-item">
-               <a class="nav-link" href="{% url 'import_full_orders_view' %}">Повний імпорт</a>
-             </li>
+
            </ul>
            <ul class="navbar-nav">
              {% if user.is_authenticated %}
