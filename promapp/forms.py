@@ -64,3 +64,7 @@ class CommissionAnalyticsForm(forms.Form):
     end_date = forms.DateField(
         widget=forms.DateInput(attrs={"type": "date"}), label="Дата завершення"
     )
+    exclude_cancelled = forms.BooleanField(
+        required=False,
+        label="Приховати відмінені замовлення"
+    )

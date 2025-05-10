@@ -1,9 +1,8 @@
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from statistics import median
 
-from django.db.models import Count, Sum
+from django.db.models import Count
 from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
@@ -13,7 +12,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 import requests
 from datetime import datetime
-import os
+from collections import defaultdict
 
 from .forms import (
     OrderImportForm, OrderFilterForm, 
@@ -60,82 +59,79 @@ def orders_list(request):
 
 @login_required
 def analytics(request):
-    """
-    Об’єднана аналітика:
-      1. Розподіл замовлень за статусами для магазинів поточного користувача.
-      2. Графік комісії: для заданого періоду (введеного через форму) 
-         – для кожного дня обчислюється медіанна комісія,
-         – також обчислюється загальна середня комісія за весь період.
-    """
-    # Аналітика за статусами
     user_stores = request.user.stores.all()
-    orders = Order.objects.filter(store__in=user_stores)
-    status_data = orders.values('status_name').annotate(count=Count('id'))
-    total_orders = orders.count()
-    status_labels = []
-    status_counts = []
-    status_percentages = []
-    for entry in status_data:
-        status_labels.append(entry['status_name'])
-        status_counts.append(entry['count'])
-        percent = (entry['count'] / total_orders * 100) if total_orders > 0 else 0
-        status_percentages.append(round(percent, 2))
+    base_qs = Order.objects.filter(store__in=user_stores)
+
+    # 1) Статуси
+    status_agg = base_qs.values("status_name").annotate(count=Count("id"))
+    total = base_qs.count()
     status_chart_data = {
-        'labels': status_labels,
-        'counts': status_counts,
-        'percentages': status_percentages,
+        "labels": [e["status_name"] for e in status_agg],
+        "counts": [e["count"] for e in status_agg],
+        "percentages": [
+            round(e["count"] * 100 / total, 2) if total else 0
+            for e in status_agg
+        ],
     }
 
-    # Аналітика комісії
+    # 2) Дані для комісій + кількості
     form = CommissionAnalyticsForm(request.GET or None)
     daily_labels = []
-    daily_medians = []
-    overall_avg = None
+    daily_sums = []
+    daily_counts = []
 
     if form.is_valid():
-        start_date = form.cleaned_data['start_date']
-        end_date = form.cleaned_data['end_date']
-        orders_period = orders.filter(
-            date_created__date__gte=start_date,
-            date_created__date__lte=end_date
-        ).order_by('date_created')
-        all_commissions = []
-        for order in orders_period:
-            commission_data = order.cpa_commission
-            if commission_data and commission_data.get("amount"):
-                try:
-                    all_commissions.append(float(commission_data.get("amount")))
-                except (ValueError, TypeError):
-                    continue
-        overall_avg = round(sum(all_commissions) / len(all_commissions), 2) if all_commissions else 0
+        start = form.cleaned_data["start_date"]
+        end   = form.cleaned_data["end_date"]
+        exclude = form.cleaned_data["exclude_cancelled"]
 
-        current_date = start_date
-        while current_date <= end_date:
-            daily_orders = orders_period.filter(date_created__date=current_date)
-            daily_commissions = []
-            for order in daily_orders:
-                commission_data = order.cpa_commission
-                if commission_data and commission_data.get("amount"):
-                    try:
-                        daily_commissions.append(float(commission_data.get("amount")))
-                    except (ValueError, TypeError):
-                        continue
-            daily_median = round(median(daily_commissions), 2) if daily_commissions else 0
-            daily_labels.append(current_date.strftime("%Y-%m-%d"))
-            daily_medians.append(daily_median)
-            current_date += timedelta(days=1)
+        # базовий queryset за датами
+        period_qs = base_qs.filter(
+            date_created__date__range=(start, end)
+        )
+        if exclude:
+            # прибираємо статус "Отменен"
+            period_qs = period_qs.exclude(status_name__iexact="Отменен")
+
+        # витягуємо лише дату та комісію
+        raw = period_qs.values("date_created", "cpa_commission")
+
+        by_date = defaultdict(list)
+        for rec in raw:
+            day = rec["date_created"].date()
+            com = rec["cpa_commission"] or {}
+            amt = com.get("amount")
+            try:
+                if amt is not None:
+                    by_date[day].append(float(amt))
+            except (ValueError, TypeError):
+                continue
+
+        days = (end - start).days + 1
+        for i in range(days):
+            day = start + timedelta(days=i)
+            daily_labels.append(day.strftime("%Y-%m-%d"))
+
+            # к-сть замовлень у цей день
+            cnt = period_qs.filter(date_created__date=day).count()
+            daily_counts.append(cnt)
+
+            # сума комісій
+            s = round(sum(by_date.get(day, [])), 2)
+            daily_sums.append(s)
+
     commission_chart_data = {
-        'labels': daily_labels,
-        'daily_medians': daily_medians,
-        'overall_avg': overall_avg,
+        "labels":       daily_labels,
+        "daily_sums":   daily_sums,
+        "daily_counts": daily_counts,
     }
 
-    context = {
-        'status_chart_data': json.dumps(status_chart_data),
-        'commission_chart_data': json.dumps(commission_chart_data),
-        'commission_form': form,
-    }
-    return render(request, 'analytics.html', context)
+    return render(request, "analytics.html", {
+        "status_chart_data":     json.dumps(status_chart_data),
+        "commission_chart_data": json.dumps(commission_chart_data),
+        "commission_form":       form,
+    })
+
 
 @login_required
 def import_orders_view(request):
