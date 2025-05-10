@@ -9,18 +9,75 @@
     <!-- Розподіл за статусами -->
     <div class="col-lg-6">
       <div class="card shadow-sm h-100">
-        <div class="card-header bg-white"><strong>Розподіл за статусами</strong></div>
-        <div class="card-body">
-          <canvas id="statusChart"></canvas>
-        </div>
+        <div class="card-header"><strong>Розподіл за статусами</strong></div>
+        <div class="card-body"><canvas id="statusChart"></canvas></div>
       </div>
     </div>
     <!-- Комісії та кількість замовлень -->
     <div class="col-lg-6">
       <div class="card shadow-sm h-100">
-        <div class="card-header bg-white"><strong>Комісії та к-сть замовлень</strong></div>
-        <div class="card-body">
-          <canvas id="commissionChart"></canvas>
+        <div class="card-header"><strong>Комісії та к-сть замовлень</strong></div>
+        <div class="card-body"><canvas id="commissionChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Топ-товари з пагінацією -->
+  <div class="row mt-4">
+    <div class="col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-header"><strong>Топ-товарів за кількістю (по 5 на стор.)</strong></div>
+        <div class="card-body p-0">
+          {% if products_page %}
+            <table class="table table-striped mb-0">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Назва товару</th>
+                  <th>Кількість</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in products_page %}
+                  <tr>
+                    <td>{{ forloop.counter0|add:products_page.start_index }}</td>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.total_qty }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <!-- Pagination controls -->
+            <nav class="mt-2">
+              <ul class="pagination justify-content-center mb-0">
+                {% if products_page.has_previous %}
+                  <li class="page-item">
+                    <a class="page-link" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}product_page={{ products_page.previous_page_number }}">Попередня</a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled"><span class="page-link">Попередня</span></li>
+                {% endif %}
+                {% for num in products_page.paginator.page_range %}
+                  {% if products_page.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                  {% else %}
+                    <li class="page-item">
+                      <a class="page-link" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}product_page={{ num }}">{{ num }}</a>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+                {% if products_page.has_next %}
+                  <li class="page-item">
+                    <a class="page-link" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}product_page={{ products_page.next_page_number }}">Наступна</a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled"><span class="page-link">Наступна</span></li>
+                {% endif %}
+              </ul>
+            </nav>
+          {% else %}
+            <div class="p-4 text-center">Вкажіть період зверху та натисніть «Оновити»</div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -30,7 +87,7 @@
   <div class="row mt-4">
     <div class="col-lg-6">
       <div class="card shadow-sm">
-        <div class="card-header bg-white"><strong>Параметри періоду</strong></div>
+        <div class="card-header"><strong>Параметри періоду</strong></div>
         <div class="card-body">
           <form method="get" class="row g-3 align-items-end">
             <div class="col-auto">
@@ -55,23 +112,23 @@
   </div>
 </div>
 
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // Пиріг за статусами
+  // Статуси
   const statusData = {{ status_chart_data|safe }};
   new Chart(document.getElementById('statusChart'), {
     type: 'pie',
     data: {
       labels: statusData.labels,
-      datasets: [{ 
-        data: statusData.counts,
-        backgroundColor: ['#FF6384','#36A2EB','#FFCE56','#4BC0C0','#9966FF','#FF9F40']
-      }]
+      datasets: [{ data: statusData.counts,
+        backgroundColor: ['#FF6384','#36A2EB','#FFCE56','#4BC0C0','#9966FF','#FF9F40'] }]
     },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} } }
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom'} } }
   });
 
-  // Лінійний графік: сума комісій (Y1) та к-сть замовлень (Y2)
+  // Комісії + кількість
   const comData = {{ commission_chart_data|safe }};
   new Chart(document.getElementById('commissionChart'), {
     type: 'line',
@@ -79,38 +136,24 @@
       labels: comData.labels,
       datasets: [
         {
-          label: 'Сумарна комісія (₴)',
-          data: comData.daily_sums,
-          yAxisID:'y1',
-          borderColor:'#007bff',
-          backgroundColor:'rgba(0,123,255,0.1)',
+          label: 'Комісія (₴)', data: comData.daily_sums, yAxisID:'y1',
+          borderColor:'#007bff', backgroundColor:'rgba(0,123,255,0.1)',
           fill:true, tension:0.3, pointRadius:3
         },
         {
-          label: 'К-сть замовлень',
-          data: comData.daily_counts,
-          yAxisID:'y2',
-          borderColor:'#dc3545',
-          borderDash:[5,5],
+          label: 'Замовлень', data: comData.daily_counts, yAxisID:'y2',
+          borderColor:'#dc3545', borderDash:[5,5],
           fill:false, tension:0.3, pointRadius:3
         }
       ]
     },
-    options: {
-      responsive:true,
-      maintainAspectRatio:false,
+    options:{
+      responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{position:'bottom'}, tooltip:{mode:'index', intersect:false} },
       scales:{
         x:{ title:{display:true, text:'Дата'} },
-        y1:{
-          type:'linear', position:'left',
-          title:{display:true, text:'Комісія (₴)'}, beginAtZero:true
-        },
-        y2:{
-          type:'linear', position:'right',
-          title:{display:true, text:'К-сть замовлень'},
-          grid:{drawOnChartArea:false}, beginAtZero:true
-        }
+        y1:{ type:'linear', position:'left', title:{display:true, text:'Комісія (₴)'}, beginAtZero:true },
+        y2:{ type:'linear', position:'right', title:{display:true, text:'Замовлень'}, grid:{drawOnChartArea:false}, beginAtZero:true }
       }
     }
   });

@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.db.models import Count
+from django.db.models import Count, Sum
 from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
@@ -59,6 +59,12 @@ def orders_list(request):
 
 @login_required
 def analytics(request):
+    """
+    Аналітика:
+      1) Пиріг – розподіл за статусами
+      2) Лінійний графік – суми комісій і кількість замовлень
+      3) Пагінована таблиця топ-товарів за кількістю проданих одиниць
+    """
     user_stores = request.user.stores.all()
     base_qs = Order.objects.filter(store__in=user_stores)
 
@@ -74,36 +80,31 @@ def analytics(request):
         ],
     }
 
-    # 2) Дані для комісій + кількості
+    # 2) Комісії та кількість замовлень
     form = CommissionAnalyticsForm(request.GET or None)
     daily_labels = []
     daily_sums = []
     daily_counts = []
 
     if form.is_valid():
-        start = form.cleaned_data["start_date"]
-        end   = form.cleaned_data["end_date"]
-        exclude = form.cleaned_data["exclude_cancelled"]
+        start   = form.cleaned_data["start_date"]
+        end     = form.cleaned_data["end_date"]
+        exclude = form.cleaned_data.get("exclude_cancelled", False)
 
-        # базовий queryset за датами
         period_qs = base_qs.filter(
             date_created__date__range=(start, end)
         )
         if exclude:
-            # прибираємо статус "Отменен"
             period_qs = period_qs.exclude(status_name__iexact="Отменен")
 
-        # витягуємо лише дату та комісію
         raw = period_qs.values("date_created", "cpa_commission")
-
         by_date = defaultdict(list)
         for rec in raw:
-            day = rec["date_created"].date()
-            com = rec["cpa_commission"] or {}
-            amt = com.get("amount")
+            d = rec["date_created"].date()
+            amt = (rec["cpa_commission"] or {}).get("amount")
             try:
                 if amt is not None:
-                    by_date[day].append(float(amt))
+                    by_date[d].append(float(amt))
             except (ValueError, TypeError):
                 continue
 
@@ -111,26 +112,35 @@ def analytics(request):
         for i in range(days):
             day = start + timedelta(days=i)
             daily_labels.append(day.strftime("%Y-%m-%d"))
+            daily_sums.append(round(sum(by_date.get(day, [])), 2))
+            daily_counts.append(period_qs.filter(date_created__date=day).count())
 
-            # к-сть замовлень у цей день
-            cnt = period_qs.filter(date_created__date=day).count()
-            daily_counts.append(cnt)
+        # 3) Повний список топ-товарів
+        top_qs = (
+            Product.objects
+            .filter(order__in=period_qs)
+            .values("name")
+            .annotate(total_qty=Sum("quantity"))
+            .order_by("-total_qty")
+        )
+        # пагінація: по 5 на сторінку
+        paginator = Paginator(top_qs, 5)
+        page_number = request.GET.get("product_page", 1)
+        products_page = paginator.get_page(page_number)
+    else:
+        products_page = None
 
-            # сума комісій
-            s = round(sum(by_date.get(day, [])), 2)
-            daily_sums.append(s)
-
-    commission_chart_data = {
-        "labels":       daily_labels,
-        "daily_sums":   daily_sums,
-        "daily_counts": daily_counts,
-    }
-
-    return render(request, "analytics.html", {
+    context = {
         "status_chart_data":     json.dumps(status_chart_data),
-        "commission_chart_data": json.dumps(commission_chart_data),
-        "commission_form":       form,
-    })
+        "commission_chart_data": json.dumps({
+            "labels":        daily_labels,
+            "daily_sums":    daily_sums,
+            "daily_counts":  daily_counts,
+        }),
+        "commission_form":      form,
+        "products_page":        products_page,
+    }
+    return render(request, "analytics.html", context)
 
 
 @login_required
