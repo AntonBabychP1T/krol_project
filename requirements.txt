@@ -4,3 +4,4 @@ requests
 psycopg2-binary
 django-environ==0.8.1
 cryptography
+openai
