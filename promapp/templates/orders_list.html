@@ -1,63 +1,82 @@
+{# templates/orders_list.html #}
 {% extends 'base.html' %}
 {% block title %}Список замовлень{% endblock %}
-{% block content %}
-  <h2>Список замовлень</h2>
 
-  <form method="get">
-    {{ filter_form.as_p }}
-    <button type="submit" class="btn btn-primary">Фільтрувати</button>
+{% block content %}
+<div class="container mt-4">
+  <h2>Замовлення</h2>
+
+  <form method="get" class="mb-3 row gx-2 gy-1 align-items-end">
+    {{ filter_form.order_id.label_tag }}<div class="col-auto">{{ filter_form.order_id }}</div>
+    {{ filter_form.start_date.label_tag }}<div class="col-auto">{{ filter_form.start_date }}</div>
+    {{ filter_form.end_date.label_tag }}<div class="col-auto">{{ filter_form.end_date }}</div>
+    {{ filter_form.client_first_name.label_tag }}<div class="col-auto">{{ filter_form.client_first_name }}</div>
+    {{ filter_form.client_last_name.label_tag }}<div class="col-auto">{{ filter_form.client_last_name }}</div>
+    {{ filter_form.phone.label_tag }}<div class="col-auto">{{ filter_form.phone }}</div>
+    {{ filter_form.email.label_tag }}<div class="col-auto">{{ filter_form.email }}</div>
+    {{ filter_form.status_name.label_tag }}<div class="col-auto">{{ filter_form.status_name }}</div>
+    {{ filter_form.source.label_tag }}<div class="col-auto">{{ filter_form.source }}</div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">Фільтрувати</button>
+    </div>
   </form>
 
-  {% if page_obj.object_list %}
-    <table class="table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Дата створення</th>
-          <th>Клієнт</th>
-          <th>Магазин</th>
-          <th>Статус</th>
-          <th>Ціна</th>
-          <th>Комісія prosale</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for order in page_obj.object_list %}
-          <tr>
-            <td>{{ order.id }}</td>
-            <td>{{ order.date_created }}</td>
-            <td>{{ order.client_first_name }} {{ order.client_last_name }}</td>
-            <td>{{ order.store.store_name }}</td>
-            <td>{{ order.status_name }}</td>
-            <td>{{ order.full_price }}</td>
-            <td>
-              {% if order.cpa_commission and order.cpa_commission.amount %}
-                {{ order.cpa_commission.amount }} 
-              {% else %}
-                -
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th><th>Дата</th><th>Клієнт</th><th>Магазин</th>
+        <th>Статус</th><th>Статус доставки</th><th>Ціна</th><th>Комісія</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in page_obj %}
+      <tr>
+        <td>{{ order.id }}</td>
+        <td>{{ order.date_created|date:"d.m.Y H:i" }}</td>
+        <td>{{ order.client_first_name }} {{ order.client_last_name }}</td>
+        <td>{{ order.store.store_name }}</td>
+        <td>{{ order.status_name }}</td>
+        <td>{{ order.delivery_status|default:"—" }}</td>
+        <td>{{ order.full_price }}</td>
+        <td>{{ order.cpa_commission.amount }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Немає замовлень</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 
-    <nav aria-label="Page navigation">
-      <ul class="pagination">
-        {% if page_obj.has_previous %}
-          <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Попередня</a></li>
-        {% endif %}
-        {% for num in page_obj.paginator.page_range %}
-          <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+  <nav>
+    <ul class="pagination">
+      {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link"
+           href="?page={{ page_obj.previous_page_number }}"
+        >&laquo; Попередня</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">&laquo;</span></li>
+      {% endif %}
+
+      {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+          <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+        {% else %}
+          <li class="page-item">
             <a class="page-link" href="?page={{ num }}">{{ num }}</a>
           </li>
-        {% endfor %}
-        {% if page_obj.has_next %}
-          <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Наступна</a></li>
         {% endif %}
-      </ul>
-    </nav>
-  {% else %}
-    <p>Замовлень не знайдено.</p>
-  {% endif %}
+      {% endfor %}
+
+      {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link"
+           href="?page={{ page_obj.next_page_number }}"
+        >Наступна &raquo;</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">&raquo;</span></li>
+      {% endif %}
+    </ul>
+  </nav>
 {% endblock %}

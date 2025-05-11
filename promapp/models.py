@@ -51,6 +51,14 @@ class Order(models.Model):
     cpa_commission = models.JSONField()
     ps_promotion = models.JSONField(blank=True, null=True)
     cancellation = models.JSONField(blank=True, null=True)
+    delivery_status = models.CharField(
+        max_length=50,
+        blank=True, null=True,
+        help_text="Статус доставки: наприклад, 'delivered', 'refused', 'pending'")
+    tracking_number = models.CharField(
+        max_length=100,
+        blank=True, null=True,
+        help_text="Номер ТТН або інший ідентифікатор відправлення")
 
     def __str__(self):
         return f"Order #{self.id} ({self.status_name})"

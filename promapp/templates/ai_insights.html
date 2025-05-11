@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}AI-поради магазину{% endblock %}
+
+{% block content %}
+  <h2 class="mb-4">AI-поради магазину</h2>
+
+  <form method="get" class="row g-3 mb-4">
+    <!-- Вибір періоду -->
+    <div class="col-auto">
+      {{ form.period.label_tag }}<br>
+      {{ form.period }}
+    </div>
+
+    <!-- Ручний вибір дат показуємо тільки коли period == 'custom' -->
+    {% if form.period.value == "custom" %}
+      <div class="col-auto">
+        {{ form.start.label_tag }}<br>
+        {{ form.start }}
+      </div>
+      <div class="col-auto">
+        {{ form.end.label_tag }}<br>
+        {{ form.end }}
+      </div>
+    {% endif %}
+
+    <div class="col-auto align-self-end">
+      <button class="btn btn-primary" type="submit">Отримати поради</button>
+    </div>
+  </form>
+
+  {% if insights %}
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>AI-аналіз</strong></div>
+      <div class="card-body">
+        <pre style="white-space: pre-wrap;">{{ insights }}</pre>
+      </div>
+    </div>
+  {% elif form.is_bound %}
+    <div class="alert alert-warning">Немає даних за обраний період.</div>
+  {% endif %}
+{% endblock %}

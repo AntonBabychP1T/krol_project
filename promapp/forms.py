@@ -68,3 +68,27 @@ class CommissionAnalyticsForm(forms.Form):
         required=False,
         label="Приховати відмінені замовлення"
     )
+
+    # ---------- форма вибору періоду ----------
+class InsightForm(forms.Form):
+    PERIODS = [
+        ("30", "Останні 30 днів"),
+        ("90", "Останні 90 днів (квартал)"),
+        ("custom", "Вказати свої дати"),
+    ]
+    period = forms.ChoiceField(choices=PERIODS, label="Період")
+    start = forms.DateField(
+        required=False, widget=forms.DateInput(attrs={"type": "date"}), label="Початок"
+    )
+    end = forms.DateField(
+        required=False, widget=forms.DateInput(attrs={"type": "date"}), label="Кінець"
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("period") == "custom":
+            if not cleaned.get("start") or not cleaned.get("end"):
+                raise forms.ValidationError("Вкажіть обидві дати.")
+            if cleaned["start"] > cleaned["end"]:
+                raise forms.ValidationError("Початок має бути не пізніше кінця.")
+        return cleaned
