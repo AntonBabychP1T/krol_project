@@ -1,27 +1,59 @@
-{% extends "base.html" %}
+{# import_orders.html #}
+{% extends 'base.html' %}
 {% block title %}Імпорт замовлень{% endblock %}
 
 {% block content %}
-<h2>Імпорт замовлень з PROM</h2>
+<div class="container mt-4">
+  <h2>Імпорт замовлень з PROM</h2>
 
-{% if message %}
-  <div class="alert alert-info">{{ message }}</div>
-{% endif %}
+  {% if message %}
+    <div class="alert alert-info">{{ message }}</div>
+  {% endif %}
 
-<form method="post">
-  {% csrf_token %}
+  <form method="post" id="importForm" class="row g-3">
+    {% csrf_token %}
 
-  <div class="mb-3">
-    <label for="store" class="form-label">Виберіть магазин:</label>
-    <select name="store" id="store" class="form-select">
-      {% for store in stores %}
-        <option value="{{ store.id }}">{{ store.store_name }}</option>
-      {% endfor %}
-    </select>
-  </div>
+    <div class="col-12 col-md-6">
+      <label for="storeSelect" class="form-label">Магазин</label>
+      <select name="store" id="storeSelect" class="form-select">
+        <option value="">— оберіть магазин —</option>
+        {% for store in stores %}
+          <option value="{{ store.id }}">{{ store.store_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
 
-  {{ form.as_p }}
+    <div class="col-12 col-md-6">
+      {{ form.period.label_tag }}
+      {{ form.period }}
+    </div>
 
-  <button type="submit" class="btn btn-primary">Імпортувати замовлення</button>
-</form>
+    <div id="customDates" class="col-12 row g-3" style="display: none;">
+      <div class="col-6 col-lg-3">
+        {{ form.start_date.label_tag }}
+        {{ form.start_date }}
+      </div>
+      <div class="col-6 col-lg-3">
+        {{ form.end_date.label_tag }}
+        {{ form.end_date }}
+      </div>
+    </div>
+
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary">Імпортувати замовлення</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  const periodField = document.querySelector('select[name="period"]');
+  const customBlock = document.getElementById('customDates');
+  function toggleCustom() {
+    const show = periodField.value === 'custom';
+    customBlock.style.display = show ? 'flex' : 'none';
+    customBlock.querySelectorAll('input').forEach(i => i.disabled = !show);
+  }
+  periodField.addEventListener('change', toggleCustom);
+  document.addEventListener('DOMContentLoaded', toggleCustom);
+</script>
 {% endblock %}

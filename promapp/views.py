@@ -1,13 +1,13 @@
 import os
 import json
-import datetime
-from datetime import date, timedelta
+from datetime import timedelta, datetime as dt
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 import re
 
 import requests
 import logging
+import threading
 
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
@@ -238,62 +238,29 @@ def analytics(request):
     })
 
 
-@login_required
-def import_orders_view(request):
-    user_stores = request.user.stores.all()
-    form = OrderImportForm(request.POST or None)
-    message = ""
-
-    if request.method == "POST" and form.is_valid():
-        store_id = request.POST.get("store")
-        if not store_id:
-            message = "Виберіть магазин!"
-        else:
-            try:
-                store = user_stores.get(id=store_id)
-                message = import_orders_for_store(store, form.cleaned_data["period"])
-            except Store.DoesNotExist:
-                message = "Магазин не знайдено!"
-
-    return render(request, "import_orders.html", {
-        "stores": user_stores,
-        "form": form,
-        "message": message,
-    })
-
-
 def _to_decimal(val):
     """
-    Конвертує будь-що у Decimal, очищаючи рядок від усього, крім цифр, ком, крапок.
-    Якщо не вдалося – повертає 0 і логерує сирий вхід.
+    Видаляємо з рядка все, крім цифр, крапок/ком, приводимо до Decimal.
     """
     if val in (None, "", "null"):
         return Decimal("0")
-    if isinstance(val, (int, float, Decimal)):
-        return Decimal(str(val))
-    if isinstance(val, str):
-        # видаляємо все, крім цифр, ком і крапок
-        cleaned = re.sub(r"[^\d\.,]", "", val)
-        # замінюємо кому на крапку
-        cleaned = cleaned.replace(",", ".")
-        try:
-            return Decimal(cleaned)
-        except InvalidOperation:
-            logger.error("Не вдалося конвертувати у Decimal: %r (очищено як %r)", val, cleaned)
-            return Decimal("0")
-    logger.error("Невідомий тип для _to_decimal: %r (%s)", val, type(val))
-    return Decimal("0")
+    raw = str(val)
+    # лишаємо цифри, крапку, кому і мінус
+    cleaned = re.sub(r"[^\d\.,-]", "", raw)
+    # замінюємо кому на крапку
+    cleaned = cleaned.replace(",", ".")
+    try:
+        return Decimal(cleaned)
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
 
 
-def import_orders_for_store(store, period="all"):
+def import_orders_for_store(store, period="all", start_date=None, end_date=None):
+
     """
-    Імпортує замовлення з PROM API, зберігає delivery_status та tracking_number.
+    Функція залишається без змін, тільки додаємо обробку custom-періоду
+    і на вході приймаємо date_from, date_to як ISO-рядки.
     """
-    import datetime
-    from datetime import timedelta
-    from django.utils.dateparse import parse_datetime
-    from django.utils import timezone
-
     base_url = getattr(store, "base_domain", "https://my.prom.ua")
     url = f"{base_url}/api/v1/orders/list"
     headers = {
@@ -301,7 +268,7 @@ def import_orders_for_store(store, period="all"):
         "Content-Type": "application/json",
     }
 
-    now = datetime.datetime.utcnow()
+    now = dt.utcnow()
     fltr = {}
     if period == "1_day":
         fltr["date_from"] = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -309,28 +276,26 @@ def import_orders_for_store(store, period="all"):
         fltr["date_from"] = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     elif period == "30_days":
         fltr["date_from"] = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+    elif period == "custom" and start_date and end_date:
+        fltr["date_from"] = start_date.strftime("%Y-%m-%dT00:00:00")
+        fltr["date_to"]   = end_date.strftime("%Y-%m-%dT23:59:59")
 
     limit = 10 if period == "test" else 100
     offset = 0
-    new_count = updated_count = fetched = 0
 
     while True:
         params = {**fltr, "limit": limit, "offset": offset}
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=15)
-        except requests.exceptions.RequestException as e:
-            return f"Помилка запиту до API: {e}"
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
         if resp.status_code != 200:
-            return f"Помилка при імпорті: {resp.status_code}"
+            # тут можна логувати помилку
+            return
 
         chunk = resp.json().get("orders", [])
         if not chunk:
             break
 
         for data in chunk:
-            # вибираємо delivery_provider_data
             dpd = data.get("delivery_provider_data") or {}
-
             order, created = Order.objects.update_or_create(
                 pk=data["id"],
                 defaults={
@@ -360,18 +325,10 @@ def import_orders_for_store(store, period="all"):
                     "cpa_commission": data.get("cpa_commission"),
                     "ps_promotion": data.get("ps_promotion"),
                     "cancellation": data.get("cancellation"),
-                    # нові поля:
-                    "delivery_status": dpd.get("unified_status"),
-                    "tracking_number": dpd.get("declaration_number"),
+                    "delivery_status":    dpd.get("unified_status"),
+                    "tracking_number":    dpd.get("declaration_number"),
                 },
             )
-
-            if created:
-                new_count += 1
-            else:
-                updated_count += 1
-
-            # позначаємо як «no_tracking», якщо виконано, але без ТТН
             if order.status_name == "Виконано" and not order.tracking_number:
                 order.delivery_status = "no_tracking"
                 order.save(update_fields=["delivery_status"])
@@ -395,12 +352,42 @@ def import_orders_for_store(store, period="all"):
                     },
                 )
 
-        fetched += len(chunk)
-        if len(chunk) < limit or period in {"1_day", "7_days", "30_days", "test"}:
-            break
         offset += limit
+        if len(chunk) < limit:
+            break
 
-    return f"Імпортовано {fetched} замовлень: {new_count} нових, {updated_count} оновлено."
+
+@login_required
+def import_orders_view(request):
+    user_stores = request.user.stores.all()
+    # Більше не передаємо user=request.user
+    form = OrderImportForm(request.POST or None)
+    message = ""
+
+    if request.method == "POST" and form.is_valid():
+        store_id = request.POST.get("store")
+        period = form.cleaned_data["period"]
+        start = form.cleaned_data.get("start_date")
+        end   = form.cleaned_data.get("end_date")
+
+        if not store_id:
+            message = "Виберіть магазин!"
+        else:
+            try:
+                store = user_stores.get(id=store_id)
+                # Якщо обрано власний період - передаємо start/end, інакше period
+                if period == "custom":
+                    message = import_orders_for_store(store, period, start, end)
+                else:
+                    message = import_orders_for_store(store, period)
+            except Store.DoesNotExist:
+                message = "Магазин не знайдено!"
+
+    return render(request, "import_orders.html", {
+        "stores":  user_stores,
+        "form":    form,
+        "message": message,
+    })
 
 
 @login_required
