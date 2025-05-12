@@ -1,7 +1,7 @@
 # promapp/forms.py
 
 from django import forms
-from .models import Store
+from .models import Order, Store
 
 class OrderImportForm(forms.Form):
     PERIOD_CHOICES = [
@@ -40,46 +40,82 @@ class OrderImportForm(forms.Form):
 
 
 class OrderFilterForm(forms.Form):
-    order_id = forms.IntegerField(required=False, label="ID замовлення")
+    order_id = forms.IntegerField(label="ID замовлення", required=False)
     start_date = forms.DateField(
+        label="Дата створення (від)", 
         required=False,
-        widget=forms.DateInput(attrs={'type': 'date'}),
-        label="Дата створення (від)"
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control form-control-sm"})
     )
     end_date = forms.DateField(
+        label="Дата створення (до)", 
         required=False,
-        widget=forms.DateInput(attrs={'type': 'date'}),
-        label="Дата створення (до)"
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control form-control-sm"})
     )
-    client_first_name = forms.CharField(required=False, label="Ім'я клієнта")
-    client_last_name = forms.CharField(required=False, label="Прізвище клієнта")
-    phone = forms.CharField(required=False, label="Телефон")
-    email = forms.CharField(required=False, label="Email")
-    status_name = forms.CharField(required=False, label="Статус")
-    source = forms.CharField(required=False, label="Джерело")
-    stores = forms.ModelMultipleChoiceField(
-        queryset=Store.objects.none(),
+    client_first_name = forms.CharField(label="Ім'я клієнта", required=False,
+                                        widget=forms.TextInput(attrs={"class": "form-control form-control-sm"}))
+    client_last_name  = forms.CharField(label="Прізвище клієнта", required=False,
+                                        widget=forms.TextInput(attrs={"class": "form-control form-control-sm"}))
+    phone = forms.CharField(label="Телефон", required=False,
+                            widget=forms.TextInput(attrs={"class": "form-control form-control-sm"}))
+    email = forms.EmailField(label="Email", required=False,
+                             widget=forms.EmailInput(attrs={"class": "form-control form-control-sm"}))
+
+    # Збираємо усі унікальні статуси з бази
+    STATUS_CHOICES = [("", "Всі статуси")] + [
+        (s["status_name"], s["status_name"])
+        for s in Order.objects.order_by().values("status_name").distinct()
+    ]
+    status_name = forms.ChoiceField(
+        label="Статус",
+        choices=STATUS_CHOICES,
         required=False,
-        label="Магазини",
-        widget=forms.CheckboxSelectMultiple
+        widget=forms.Select(attrs={"class": "form-select form-select-sm"})
     )
 
-    def __init__(self, *args, **kwargs):
-        user = kwargs.pop('user', None)
+    # І всі унікальні джерела
+    SOURCE_CHOICES = [("", "Всі джерела")] + [
+        (s["source"], s["source"])
+        for s in Order.objects.order_by().values("source").distinct()
+    ]
+    source = forms.ChoiceField(
+        label="Джерело",
+        choices=SOURCE_CHOICES,
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select form-select-sm"})
+    )
+
+    # Магазини (як раніше)
+    stores = forms.ModelMultipleChoiceField(
+        label="Магазини",
+        queryset=Store.objects.none(),  # заповнимо у вію
+        required=False,
+        widget=forms.SelectMultiple(attrs={"class": "form-select form-select-sm"})
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if user:
-            self.fields['stores'].queryset = user.stores.all()
+            self.fields["stores"].queryset = user.stores.all()
 
 
 class StoreForm(forms.ModelForm):
     class Meta:
         model = Store
-        fields = ['store_name', 'api_key']
-        labels = {
-            'store_name': 'Назва магазину',
-            'api_key': 'API ключ',
+        fields = ["store_name", "api_key"]
+        widgets = {
+            "store_name": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Назва вашого магазину"
+            }),
+            "api_key": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "API-ключ із Prom"
+            }),
         }
-
+        labels = {
+            "store_name": "Назва магазину",
+            "api_key":    "API-ключ"
+        }
 
 class CommissionAnalyticsForm(forms.Form):
     start_date = forms.DateField(

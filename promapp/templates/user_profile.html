@@ -1,37 +1,82 @@
 {% extends 'base.html' %}
+
 {% block title %}Профіль користувача{% endblock %}
+
 {% block content %}
-  <h2>Профіль користувача</h2>
-  <p>Привіт, {{ request.user.username }}!</p>
-  
-  <h3>Ваші магазини</h3>
+<div class="container py-5">
+
+  <!-- Опис функціоналу -->
+  <div class="mb-5 p-4 bg-light rounded shadow-sm">
+    <h2 class="h4">Вітаємо в PROM Project</h2>
+    <p class="mb-0">
+      Цей сервіс дозволяє:
+      <ul class="mb-0">
+        <li>Імпортувати замовлення з Prom.ua</li>
+        <li>Відстежувати статуси доставки</li>
+        <li>Аналізувати продажі та маржу</li>
+        <li>Отримувати AI-поради щодо оптимізації</li>
+      </ul>
+    </p>
+  </div>
+
+  <!-- Інформація про користувача -->
+  <div class="mb-4">
+    <h3>Привіт, {{ request.user.first_name|default:request.user.username }}!</h3>
+    <p class="text-muted">
+      Дата реєстрації: {{ request.user.date_joined|date:"d.m.Y" }}
+    </p>
+  </div>
+
+  <!-- Список магазинів -->
+  <h4 class="mb-3">Ваші магазини</h4>
   {% if stores %}
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Назва магазину</th>
-          <th>API ключ</th>
-          <th>Дата створення</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for store in stores %}
-          <tr>
-            <td>{{ store.store_name }}</td>
-            <td>{{ store.obfuscated_api_key }}</td>
-            <td>{{ store.created_at }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="row row-cols-1 row-cols-md-2 g-4 mb-5">
+      {% for store in stores %}
+        <div class="col">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body">
+              <h5 class="card-title">{{ store.store_name }}</h5>
+              <p class="card-text">
+                <strong>API-ключ:</strong>
+                <code>{{ store.obfuscated_api_key }}</code>
+              </p>
+              <p class="text-muted mb-0">
+                Додано: {{ store.created_at|date:"d.m.Y H:i" }}
+              </p>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
   {% else %}
-    <p>У вас немає магазинів. Будь ласка, додайте магазин.</p>
+    <div class="alert alert-warning">
+      У вас поки що немає жодного магазину. Додайте свій перший!
+    </div>
   {% endif %}
-  
-  <h3>Додати магазин</h3>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-primary">Додати магазин</button>
-  </form>
+
+  <!-- Форма додавання нового магазину -->
+  <div class="card p-4 shadow-sm">
+    <h5 class="mb-3">Додати магазин</h5>
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="row g-3">
+        <div class="col-md-6">
+          {{ form.store_name.label_tag }}
+          {{ form.store_name }}
+          {{ form.store_name.errors }}
+        </div>
+        <div class="col-md-6">
+          {{ form.api_key.label_tag }}
+          {{ form.api_key }}
+          {{ form.api_key.errors }}
+        </div>
+      </div>
+      <button type="submit" class="btn btn-success mt-4">
+        Додати магазин
+      </button>
+    </form>
+  </div>
+
+</div>
 {% endblock %}

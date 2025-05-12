@@ -1,13 +1,24 @@
 {% extends 'base.html' %}
-{% block title %}Головна сторінка{% endblock %}
+{% block title %}Головна — PROM Project{% endblock %}
+
 {% block content %}
-<div class="text-center">
-  <h1>Ласкаво просимо до PROM Project</h1>
-  <p>Оберіть розділ для роботи:</p>
-  <div class="d-grid gap-3 col-6 mx-auto">
-    <a class="btn btn-primary" href="{% url 'orders_list' %}">Замовлення</a>
-    <a class="btn btn-secondary" href="{% url 'import_orders_view' %}">Імпорт</a>
-    <a class="btn btn-success" href="{% url 'analytics' %}">Аналітика</a>
+<div class="text-center animate__animated animate__fadeIn">
+  <h1 class="display-5 fw-bold mb-3">Ласкаво просимо до <span class="text-primary">PROM Project</span></h1>
+  <p class="lead mb-5">Оберіть розділ для роботи:</p>
+  <div class="d-grid gap-4 col-8 mx-auto">
+    <a class="btn btn-modern btn-lg btn-primary animate__animated animate__pulse animate__infinite" 
+       href="{% url 'orders_list' %}">
+      Замовлення
+    </a>
+    <a class="btn btn-modern btn-lg btn-secondary" href="{% url 'import_orders_view' %}">
+      Імпорт
+    </a>
+    <a class="btn btn-modern btn-lg btn-success" href="{% url 'analytics' %}">
+      Аналітика
+    </a>
+    <a class="btn btn-modern btn-lg btn-info text-white" href="{% url 'ai_insights' %}">
+      AI-поради
+    </a>
   </div>
 </div>
 {% endblock %}

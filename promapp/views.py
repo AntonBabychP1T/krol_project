@@ -215,40 +215,47 @@ def ai_insights(request):
 
 @login_required
 def orders_list(request):
+    # 1️⃣ Форма фільтрів
     filter_form = OrderFilterForm(request.GET or None, user=request.user)
-    user_stores = request.user.stores.all()
-    orders = Order.objects.filter(store__in=user_stores).order_by("-date_created")
 
+    # 2️⃣ Базовий QS: тільки по магазинах користувача + prefetch products
+    qs = (
+        Order.objects
+        .filter(store__in=request.user.stores.all())
+        .order_by('-date_created')
+        .prefetch_related('products')    # <-- тільки ця, бо related_name='products'
+    )
+
+    # 3️⃣ Накладемо фільтри
     if filter_form.is_valid():
         cd = filter_form.cleaned_data
-        if cd.get("order_id"):
-            orders = orders.filter(id=cd["order_id"])
-        if cd.get("start_date"):
-            orders = orders.filter(date_created__gte=cd["start_date"])
-        if cd.get("end_date"):
-            orders = orders.filter(date_created__lte=cd["end_date"])
-        if cd.get("client_first_name"):
-            orders = orders.filter(client_first_name__icontains=cd["client_first_name"])
-        if cd.get("client_last_name"):
-            orders = orders.filter(client_last_name__icontains=cd["client_last_name"])
-        if cd.get("phone"):
-            orders = orders.filter(phone__icontains=cd["phone"])
-        if cd.get("email"):
-            orders = orders.filter(email__icontains=cd["email"])
-        if cd.get("status_name"):
-            orders = orders.filter(status_name__icontains=cd["status_name"])
-        if cd.get("source"):
-            orders = orders.filter(source__icontains=cd["source"])
-        if cd.get("stores"):
-            orders = orders.filter(store__in=cd["stores"])
+        if cd.get('order_id'):
+            qs = qs.filter(id=cd['order_id'])
+        if cd.get('start_date'):
+            qs = qs.filter(date_created__date__gte=cd['start_date'])
+        if cd.get('end_date'):
+            qs = qs.filter(date_created__date__lte=cd['end_date'])
+        if cd.get('status_name'):
+            qs = qs.filter(status_name=cd['status_name'])
+        if cd.get('source'):
+            qs = qs.filter(source=cd['source'])
+        # ми приберемо фільтр за stores, бо виводу магазину більше нема
 
-    paginator = Paginator(orders, 10)
-    page_obj = paginator.get_page(request.GET.get("page"))
-    return render(request, "orders_list.html", {
-        "page_obj": page_obj,
-        "filter_form": filter_form,
+    # 4️⃣ Пагінація
+    paginator   = Paginator(qs, 10)
+    page_number = request.GET.get('page')
+    page_obj    = paginator.get_page(page_number)
+
+    # 5️⃣ Залишаємо всі GET-параметри без 'page' для пагінації
+    params = request.GET.copy()
+    params.pop('page', None)
+    params = params.urlencode()
+
+    return render(request, 'orders_list.html', {
+        'filter_form': filter_form,
+        'page_obj':    page_obj,
+        'params':      params,
     })
-
 
 @login_required
 def analytics(request):
