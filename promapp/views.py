@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import timedelta, datetime as dt
+from datetime import date, timedelta, datetime as dt
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 import re
@@ -14,7 +14,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth import login, logout
 from django.core.paginator import Paginator
-from django.db.models import Count, Sum, DecimalField
+from django.db.models import (
+    Count, Sum, Avg, DecimalField, Q      # ← Avg та Q
+)
+from django.contrib.postgres.fields.jsonb import KeyTextTransform  # ← для доступу до JSON‑поля
 from django.db.models.functions import Cast
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -39,48 +42,85 @@ def index(request):
     return render(request, "index.html")
 
 
+from decimal import Decimal, InvalidOperation
+
+def _to_float(val):
+    """Надійно перетворює JSON‑рядок на float або 0.0"""
+    try:
+        if val in (None, "", "none"):
+            return 0.0
+        return float(re.sub(r"[^\d.\-]", "", str(val)))
+    except (ValueError, InvalidOperation):
+        return 0.0
+
+
 def build_payload(user, start, end):
-    stores = user.stores.all()
-    orders = Order.objects.filter(
-        store__in=stores,
+    qs = Order.objects.filter(
+        store__in=user.stores.all(),
         date_created__date__range=(start, end)
     )
 
-    # ————— Python-рівнева обробка full_price —————
-    revenues = []
-    for order_id, raw_price in orders.values_list('id', 'full_price'):
-        if raw_price:
-            # видаляємо все, крім цифр, крапок і ком
-            cleaned = re.sub(r'[^\d\.,]', '', raw_price).replace(',', '.')
-            try:
-                revenues.append(Decimal(cleaned))
-            except InvalidOperation:
-                logger.error("Невірний full_price для заказу %s: %r", order_id, raw_price)
-    total_revenue = sum(revenues) if revenues else Decimal('0')
+    delivered = qs.filter(delivery_status="delivered")
+    refused   = qs.filter(delivery_status="refused")
+    cancelled = qs.filter(status_name__iexact="Отменен")
 
-    cancels = orders.filter(status_name__iexact="Отменен").count()
-    comm_total = sum(
-        float((c or {}).get("amount", 0))
-        for c in orders.values_list("cpa_commission", flat=True)
-    )
+    # —— комісія та ціна для всіх замовлень (у Python, аби уникнути помилок CAST) ——
+    comm_values = [
+        _to_float((c or {}).get("amount"))
+        for c in qs.values_list("cpa_commission", flat=True)
+    ]
+    price_values = [
+        _to_float(p) for p in qs.values_list("price", flat=True)
+    ]
 
-    top_items = (
-        Product.objects.filter(order__in=orders)
+    commission_total = round(sum(comm_values), 2)
+    commission_avg   = round(commission_total / len([v for v in comm_values if v]), 2) if comm_values else 0
+    revenue_gross    = round(sum(price_values), 2)
+
+    # —— топ‑товари без «проблемних» CAST ——
+    top_raw = (
+        Product.objects
+        .filter(order__in=qs)
         .values("name")
-        .annotate(qty=Sum("quantity"))
-        .order_by("-qty")[:10]
+        .annotate(
+            sold_qty      = Sum("quantity"),
+            delivered_qty = Sum("quantity", filter=Q(order__delivery_status="delivered")),
+            refused_qty   = Sum("quantity", filter=Q(order__delivery_status="refused")),
+        )
+        .order_by("-sold_qty")[:15]
     )
+
+    # обчислюємо середню комісію/ціну для кожного товару вже в Python
+    top_items = []
+    for t in top_raw:
+        prod_qs = Product.objects.filter(order__in=qs, name=t["name"])
+        p_comm  = [_to_float(p.cpa_commission.get("amount")) for p in prod_qs if p.cpa_commission]
+        p_price = [_to_float(p.price) for p in prod_qs]
+
+        top_items.append({
+            "name":          t["name"][:60],
+            "sold":          int(t["sold_qty"] or 0),
+            "delivered":     int(t["delivered_qty"] or 0),
+            "refused":       int(t["refused_qty"] or 0),
+            "avg_commission": round(sum(p_comm)  / len(p_comm), 2) if p_comm else 0,
+            "avg_price":      round(sum(p_price) / len(p_price), 2) if p_price else 0,
+        })
 
     return {
-        "period": f"{start}→{end}",
-        "orders": orders.count(),
-        "revenue": float(total_revenue),
-        "avg_order": float(total_revenue) / orders.count() if orders.count() else 0,
-        "cancel_pct": round(cancels * 100 / orders.count(), 2) if orders.count() else 0,
-        "commission_total": round(comm_total, 2),
-        "top_items": [{"name": t["name"][:60], "qty": int(t["qty"])} for t in top_items],
+        "period": f"{start} → {end}",
+        "orders_total":       qs.count(),
+        "orders_delivered":   delivered.count(),
+        "orders_refused":     refused.count(),
+        "orders_cancelled":   cancelled.count(),
+        "revenue_gross":      revenue_gross,
+        "commission_total":   commission_total,
+        "commission_avg":     commission_avg,
+        "delivery_status_distribution": {
+            s: qs.filter(delivery_status=s).count()
+            for s in ("delivered", "in_warehouse", "refused", "no_tracking")
+        },
+        "top_items": top_items,
     }
-
 
 
 @login_required
@@ -88,10 +128,12 @@ def ai_insights(request):
     form = InsightForm(request.GET or None, initial={"period": "30"})
     insights = None
     payload_json = None
+    truncated = False
+    
 
     if form.is_valid():
         # Визначення дат
-        today = date.today()
+        today = dt.today()
         if form.cleaned_data["period"] == "30":
             start, end = today - timedelta(days=29), today
         elif form.cleaned_data["period"] == "90":
@@ -107,29 +149,67 @@ def ai_insights(request):
         logger.debug("AI payload for user %s: %s", request.user.username, payload_json)
 
         messages = [
-            {"role": "system",
-             "content": "Ви досвідчений e-commerce аналітик. Дайте короткий аналіз і 5 конкретних порад."},
-            {"role": "user",
-             "content": f"Статистика магазину:\n```json\n{payload_json}\n```"},
+        {
+            "role": "system",
+            "content": (
+            "You are an e‑commerce financial analyst. "
+            "The shop uses a **dropshipping** model (goods stored at suppliers’ warehouses). "
+            "Gross revenue ≠ net profit. Prom commission is a proxy of margin: "
+            "• High commission → healthy margin  • Commission < 30 UAH → risky (may be <1 USD profit). "
+            "Delivery statuses:\n"
+            " • delivered – money received\n"
+            " • in_warehouse – parcel waiting at Nova Poshta; >5 days = high risk of refusal\n"
+            " • refused – direct loss\n"
+            " • no_tracking – parcel not sent or tracking lost\n"
+            "Cancellation (status_name = 'Отменен') also means loss."
+            "Give the answer in Ukrainian"
+            )
+        },
+        {
+            "role": "user",
+            "content": (
+            "Here is 90‑day shop summary as JSON ↓. "
+            "Please return output in **three blocks**:\n"
+            "### 1. KPI\n"
+            "• Orders total / delivered / refused / cancelled  \n"
+            "• Gross revenue  \n"
+            "• Prom commission total & avg per order  \n"
+            "• Avg delivery lead‑time (use in_warehouse count if possible)\n"
+            "### 2. Problems (max 5 bullets)\n"
+            "### 3. Action plan (max 5 bullets) – concrete, measurable, adapted to DROPSHIPPING reality.\n"
+            "Also include a small Markdown table (≤ 10 rows) of top items with columns: "
+            "`Name | Sold | Delivered | Refused | Avg Price | Avg Commission` and highlight rows "
+            "where Avg Commission < 30 UAH or Refused / Sold > 20 %.\n\n"
+            f"```json\n{payload_json}\n```"
+            )
+        }
         ]
+
+
 
         try:
             resp = openai_client.chat.completions.create(
                 model="gpt-4.1-nano",
                 messages=messages,
                 temperature=0.5,
-                max_tokens=500,
+                max_tokens=1000,     # збільшили ліміт
             )
-            insights = resp.choices[0].message.content.strip()
-            logger.debug("AI response: %s", insights)
+            choice = resp.choices[0]
+            insights = choice.message.content.strip()
+            # якщо модель обрізала текст, finish_reason == 'length'
+            if choice.finish_reason == 'length':
+                if resp and resp.choices and resp.choices[0].finish_reason == "length":
+                    truncated = True
+                logger.warning("AI response was truncated due to max_tokens")
         except Exception as e:
             logger.error("AI request failed: %s", e, exc_info=True)
             insights = f"Не вдалося звернутися до AI: {e}"
 
     return render(request, "ai_insights.html", {
-        "form": form,
-        "insights": insights,
-        "payload_json": payload_json,
+    "form": form,
+    "insights": insights,
+    "payload_json": payload_json,
+    "truncated": truncated,
     })
 
 @login_required

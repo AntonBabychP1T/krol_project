@@ -1,41 +1,58 @@
+{#  templates/ai_insights.html  #}
 {% extends "base.html" %}
-{% block title %}AI-поради магазину{% endblock %}
+{% load markdown_extras %}   {# фільтр md => HTML #}
+
+{% block title %}AI‑поради магазину{% endblock %}
 
 {% block content %}
-  <h2 class="mb-4">AI-поради магазину</h2>
+<h2 class="mb-4">AI‑поради магазину</h2>
 
-  <form method="get" class="row g-3 mb-4">
-    <!-- Вибір періоду -->
+<form method="get" class="row g-3 mb-4">
+  <!-- Період (фіксований або «Власний») -->
+  <div class="col-auto">
+    {{ form.period.label_tag }}<br>
+    {{ form.period }}
+  </div>
+
+  {# поля дат показуємо лише для «Власного періоду» #}
+  {% if form.period.value == "custom" %}
     <div class="col-auto">
-      {{ form.period.label_tag }}<br>
-      {{ form.period }}
+      {{ form.start.label_tag }}<br>
+      {{ form.start }}
     </div>
-
-    <!-- Ручний вибір дат показуємо тільки коли period == 'custom' -->
-    {% if form.period.value == "custom" %}
-      <div class="col-auto">
-        {{ form.start.label_tag }}<br>
-        {{ form.start }}
-      </div>
-      <div class="col-auto">
-        {{ form.end.label_tag }}<br>
-        {{ form.end }}
-      </div>
-    {% endif %}
-
-    <div class="col-auto align-self-end">
-      <button class="btn btn-primary" type="submit">Отримати поради</button>
+    <div class="col-auto">
+      {{ form.end.label_tag }}<br>
+      {{ form.end }}
     </div>
-  </form>
-
-  {% if insights %}
-    <div class="card shadow-sm">
-      <div class="card-header bg-white"><strong>AI-аналіз</strong></div>
-      <div class="card-body">
-        <pre style="white-space: pre-wrap;">{{ insights }}</pre>
-      </div>
-    </div>
-  {% elif form.is_bound %}
-    <div class="alert alert-warning">Немає даних за обраний період.</div>
   {% endif %}
+
+  <div class="col-auto align-self-end">
+    <button type="submit" class="btn btn-primary">Отримати поради</button>
+  </div>
+</form>
+
+{# ▸ повідомлення, якщо GPT обрізав відповідь #}
+{% if truncated %}
+  <div class="alert alert-warning">
+    ⚠️ Увага: відповідь вийшла занадто довгою і була скорочена.
+    Спробуйте обрати менший період або збільшити ліміт токенів.
+  </div>
+{% endif %}
+
+{# ▸ основний блок результатів #}
+{% if insights %}
+  <div class="card shadow-sm">
+    <div class="card-header bg-white"><strong>AI‑аналіз</strong></div>
+
+    <div class="card-body">
+      {# Markdown‑текст конвертуємо в HTML і вставляємо #}
+      <div class="markdown-body">
+      {{ insights|md|safe }}
+      </div>
+    </div>
+  </div>
+
+{% elif form.is_bound %}
+  <div class="alert alert-warning">Немає даних за обраний період.</div>
+{% endif %}
 {% endblock %}

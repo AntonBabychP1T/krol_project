@@ -11,53 +11,50 @@
           height: 300px;
           margin: 10px auto;
       }
+      .markdown-body table   { width:100%; border-collapse:collapse; }
+      .markdown-body th,
+      .markdown-body td      { border:1px solid #dee2e6; padding:.35rem; }
+
     </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-       <div class="container">
-         <a class="navbar-brand" href="{% url 'index' %}">PROM Project</a>
-         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" 
-                 aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-           <span class="navbar-toggler-icon"></span>
-         </button>
-         <div class="collapse navbar-collapse" id="navbarNav">
-           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-             <li class="nav-item">
-               <a class="nav-link" href="{% url 'orders_list' %}">Замовлення</a>
-             </li>
-             <li class="nav-item">
-               <a class="nav-link" href="{% url 'analytics' %}">Аналітика</a>
-             </li>
-             <li class="nav-item">
-               <a class="nav-link" href="{% url 'import_orders_view' %}">Імпорт</a>
-             </li>
-             <li class="nav-item">
-               <a class="nav-link" href="{% url 'ai_insights' %}">AI‑поради</a>
-             </li>
+  <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container">
+      <a class="navbar-brand" href="{% url 'index' %}">PROM Project</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+              data-bs-target="#navbarNav" aria-controls="navbarNav"
+              aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item"><a class="nav-link" href="{% url 'orders_list' %}">Замовлення</a></li>
+          <li class="nav-item"><a class="nav-link" href="{% url 'analytics' %}">Аналітика</a></li>
+          <li class="nav-item"><a class="nav-link" href="{% url 'import_orders_view' %}">Імпорт</a></li>
+          <li class="nav-item"><a class="nav-link" href="{% url 'ai_insights' %}">AI-поради</a></li>
+        </ul>
 
-           </ul>
-           <ul class="navbar-nav">
-             {% if user.is_authenticated %}
-               <li class="nav-item">
-                  <li>Привіт, <a href="{% url 'user_profile' %}">{{ user.username }}</a></li>
-              </li>
-               <li class="nav-item">
-                 <a class="nav-link" href="{% url 'logout' %}">Вихід</a>
-               </li>
-             {% else %}
-               <li class="nav-item">
-                 <a class="nav-link" href="{% url 'login' %}">Вхід</a>
-               </li>
-               <li class="nav-item">
-                 <a class="nav-link" href="{% url 'register' %}">Реєстрація</a>
-               </li>
-             {% endif %}
-           </ul>
-         </div>
-       </div>
-    </nav>
+        {% if user.is_authenticated %}
+          <div class="d-flex align-items-center">
+            <span class="navbar-text me-3">
+              Привіт, <a href="{% url 'user_profile' %}" class="link-primary text-decoration-none">
+                {{ user.username|capfirst }}
+              </a>
+            </span>
+            <a class="btn btn-outline-secondary btn-sm" href="{% url 'logout' %}">
+              Вихід
+            </a>
+          </div>
+        {% else %}
+          <ul class="navbar-nav">
+            <li class="nav-item"><a class="nav-link" href="{% url 'login' %}">Вхід</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'register' %}">Реєстрація</a></li>
+          </ul>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
     <div class="container mt-4">
        {% block content %}{% endblock %}
     </div>
