@@ -1,27 +1,35 @@
 # promapp/templatetags/markdown_extras.py
-
 from django import template
-import markdown2, bleach
+import markdown2
+import bleach
 
 register = template.Library()
 
-# Зливаємо frozenset + set
-ALLOWED_TAGS = bleach.sanitizer.ALLOWED_TAGS.union({
+# базовий whitelist bleach повертає як frozenset → перетворюємо у list,
+# а потім розширюємо своїми елементами
+ALLOWED_TAGS = list(bleach.sanitizer.ALLOWED_TAGS) + [
     "h1", "h2", "h3", "h4",
-    "table", "thead", "tbody", "tr", "th", "td"
-})
+    "table", "thead", "tbody", "tr", "th", "td",
+]
 
-@register.filter
-def md(value):
+ALLOWED_ATTRS = {
+    # дозволимо посиланням target / rel ‑ атрибути
+    **bleach.sanitizer.ALLOWED_ATTRIBUTES,
+    "a": ["href", "title", "target", "rel"],
+    "th": ["align"], "td": ["align"],
+}
+
+@register.filter(name="md", is_safe=True)
+def markdown_safe(value: str) -> str:
     """
-    Перетворює Markdown → безпечний HTML з підтримкою таблиць.
+    Конвертує Markdown‑текст у HTML та санітизує результат.
+    Тег позначено is_safe=True, бо bleach уже видаляє небезпечне.
     """
-    html = markdown2.markdown(value, extras=["tables", "fenced-code-blocks"])
-    # Використовуємо ті ж самі атрибути що й за замовчуванням
-    cleaned = bleach.clean(
-        html,
-        tags=ALLOWED_TAGS,
-        attributes=bleach.sanitizer.ALLOWED_ATTRIBUTES,
-        strip=True
+    if not value:
+        return ""
+    html = markdown2.markdown(
+        value,
+        extras=["tables", "fenced-code-blocks"]
     )
-    return cleaned
+    # очищаємо: прибираємо «не дозволені» теги/атрибути, JS‑обробники тощо
+    return bleach.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)

@@ -3,6 +3,7 @@ import json
 from datetime import date, timedelta, datetime as dt
 from decimal import Decimal, InvalidOperation
 from collections import defaultdict
+from django.contrib import messages
 import re
 
 import requests
@@ -437,36 +438,49 @@ def import_orders_for_store(store, period="all", start_date=None, end_date=None)
             break
 
 
+# --- замініть тільки тіло import_orders_view ---
 @login_required
 def import_orders_view(request):
     user_stores = request.user.stores.all()
-    # Більше не передаємо user=request.user
     form = OrderImportForm(request.POST or None)
-    message = ""
 
     if request.method == "POST" and form.is_valid():
         store_id = request.POST.get("store")
-        period = form.cleaned_data["period"]
-        start = form.cleaned_data.get("start_date")
-        end   = form.cleaned_data.get("end_date")
+        period   = form.cleaned_data["period"]
+        start_dt = form.cleaned_data.get("start_date")
+        end_dt   = form.cleaned_data.get("end_date")
 
         if not store_id:
-            message = "Виберіть магазин!"
-        else:
+            messages.error(request, "⚠️ Виберіть магазин.")
+            return redirect("import_orders_view")
+
+        try:
+            store = user_stores.get(id=store_id)
+        except Store.DoesNotExist:
+            messages.error(request, "Магазин не знайдено.")
+            return redirect("import_orders_view")
+
+        # --- запуск у фоновому daemon‑потоці -----------------
+        def _run_import():
             try:
-                store = user_stores.get(id=store_id)
-                # Якщо обрано власний період - передаємо start/end, інакше period
                 if period == "custom":
-                    message = import_orders_for_store(store, period, start, end)
+                    import_orders_for_store(store, period, start_dt, end_dt)
                 else:
-                    message = import_orders_for_store(store, period)
-            except Store.DoesNotExist:
-                message = "Магазин не знайдено!"
+                    import_orders_for_store(store, period)
+                logger.info("Імпорт %s завершено", store.name)
+            except Exception as exc:          # логуємо — не ламаємо весь Django
+                logger.exception("Помилка імпорту: %s", exc)
+
+        threading.Thread(target=_run_import, daemon=True).start()
+        messages.info(
+            request,
+            "✅ Імпорт запущено у фоні. Дані оновляться незабаром."
+        )
+        return redirect("import_orders_view")
 
     return render(request, "import_orders.html", {
-        "stores":  user_stores,
-        "form":    form,
-        "message": message,
+        "stores": user_stores,
+        "form":   form,
     })
 
 

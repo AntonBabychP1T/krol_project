@@ -1,58 +1,73 @@
-{#  templates/ai_insights.html  #}
+{# templates/ai_insights.html #}
 {% extends "base.html" %}
-{% load markdown_extras %}   {# фільтр md => HTML #}
 
-{% block title %}AI‑поради магазину{% endblock %}
+{% block title %}AI-поради магазину{% endblock %}
 
 {% block content %}
-<h2 class="mb-4">AI‑поради магазину</h2>
+  <h2 class="mb-4">AI-поради магазину</h2>
 
-<form method="get" class="row g-3 mb-4">
-  <!-- Період (фіксований або «Власний») -->
-  <div class="col-auto">
-    {{ form.period.label_tag }}<br>
-    {{ form.period }}
-  </div>
+  <form method="get" id="insights-form" class="row g-3 mb-4 align-items-end">
+    <!-- Період для AI-аналізу -->
+    <div class="col-auto d-flex flex-column">
+      {{ form.period.label_tag }}
+      {{ form.period }}
+    </div>
 
-  {# поля дат показуємо лише для «Власного періоду» #}
-  {% if form.period.value == "custom" %}
-    <div class="col-auto">
-      {{ form.start.label_tag }}<br>
+    <!-- Дати для власного періоду (приховані за замовчуванням) -->
+    <div id="custom-start" class="col-auto d-flex flex-column d-none">
+      {{ form.start.label_tag }}
       {{ form.start }}
     </div>
-    <div class="col-auto">
-      {{ form.end.label_tag }}<br>
+    <div id="custom-end" class="col-auto d-flex flex-column d-none">
+      {{ form.end.label_tag }}
       {{ form.end }}
+    </div>
+
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">Отримати поради</button>
+    </div>
+  </form>
+
+  {# Повідомлення, якщо відповідь GPT була обрізана по ліміту токенів #}
+  {% if truncated %}
+    <div class="alert alert-warning mb-4">
+      ⚠️ Увага: відповідь вийшла занадто довгою та була скорочена. 
+      Спробуйте обрати менший період або збільшити ліміт токенів у налаштуваннях.
     </div>
   {% endif %}
 
-  <div class="col-auto align-self-end">
-    <button type="submit" class="btn btn-primary">Отримати поради</button>
-  </div>
-</form>
-
-{# ▸ повідомлення, якщо GPT обрізав відповідь #}
-{% if truncated %}
-  <div class="alert alert-warning">
-    ⚠️ Увага: відповідь вийшла занадто довгою і була скорочена.
-    Спробуйте обрати менший період або збільшити ліміт токенів.
-  </div>
-{% endif %}
-
-{# ▸ основний блок результатів #}
-{% if insights %}
-  <div class="card shadow-sm">
-    <div class="card-header bg-white"><strong>AI‑аналіз</strong></div>
-
-    <div class="card-body">
-      {# Markdown‑текст конвертуємо в HTML і вставляємо #}
-      <div class="markdown-body">
-      {{ insights|md|safe }}
+  {# Відображаємо інсайти, якщо вони є #}
+  {% if insights %}
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>AI-аналіз</strong></div>
+      <div class="card-body">
+        <pre style="white-space: pre-wrap;">{{ insights }}</pre>
       </div>
     </div>
-  </div>
+  {% elif form.is_bound %}
+    <div class="alert alert-warning">Немає даних за обраний період.</div>
+  {% endif %}
+{% endblock %}
 
-{% elif form.is_bound %}
-  <div class="alert alert-warning">Немає даних за обраний період.</div>
-{% endif %}
+{% block extra_scripts %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function(){
+      const sel       = document.querySelector('#insights-form select[name="period"]');
+      const startDiv  = document.getElementById('custom-start');
+      const endDiv    = document.getElementById('custom-end');
+
+      function toggleCustom() {
+        if (sel.value === 'custom') {
+          startDiv.classList.remove('d-none');
+          endDiv.classList.remove('d-none');
+        } else {
+          startDiv.classList.add('d-none');
+          endDiv.classList.add('d-none');
+        }
+      }
+
+      sel.addEventListener('change', toggleCustom);
+      toggleCustom();  // приховуємо/показуємо поля одразу після завантаження
+    });
+  </script>
 {% endblock %}
