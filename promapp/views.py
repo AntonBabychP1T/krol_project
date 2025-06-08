@@ -37,11 +37,11 @@ from .models import Order, Product, Store
 # Ініціалізуємо логгер та OpenAI-клієнта
 logger = logging.getLogger(__name__)
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+AI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
+TOKEN_LIMIT = os.getenv("OPENAI_TOKEN_LIMIT", 2000)
 
 def index(request):
     return render(request, "index.html")
-
 
 from decimal import Decimal, InvalidOperation
 
@@ -53,7 +53,6 @@ def _to_float(val):
         return float(re.sub(r"[^\d.\-]", "", str(val)))
     except (ValueError, InvalidOperation):
         return 0.0
-
 
 def build_payload(user, start, end):
     qs = Order.objects.filter(
@@ -163,6 +162,12 @@ def ai_insights(request):
             " • refused – direct loss\n"
             " • no_tracking – parcel not sent or tracking lost\n"
             "Cancellation (status_name = 'Отменен') also means loss."
+            """ Respond in **valid HTML** only (no Markdown). 
+            Use:
+            – `<h3>` for section titles,
+            – `<ul><li>` for bullet lists,
+            – `<table>` for the top-items table.
+            Wrap the whole answer in a single `<div>`. """
             "Give the answer in Ukrainian"
             )
         },
@@ -185,15 +190,12 @@ def ai_insights(request):
             )
         }
         ]
-
-
-
         try:
             resp = openai_client.chat.completions.create(
-                model="gpt-4.1-nano",
+                model=AI_MODEL,
                 messages=messages,
                 temperature=0.5,
-                max_tokens=1000,     # збільшили ліміт
+                max_tokens=3000,     # збільшили ліміт
             )
             choice = resp.choices[0]
             insights = choice.message.content.strip()
@@ -445,7 +447,6 @@ def import_orders_for_store(store, period="all", start_date=None, end_date=None)
             break
 
 
-# --- замініть тільки тіло import_orders_view ---
 @login_required
 def import_orders_view(request):
     user_stores = request.user.stores.all()
@@ -474,7 +475,7 @@ def import_orders_view(request):
                     import_orders_for_store(store, period, start_dt, end_dt)
                 else:
                     import_orders_for_store(store, period)
-                logger.info("Імпорт %s завершено", store.name)
+                logger.info("Імпорт %s завершено", store.store_name)
             except Exception as exc:          # логуємо — не ламаємо весь Django
                 logger.exception("Помилка імпорту: %s", exc)
 

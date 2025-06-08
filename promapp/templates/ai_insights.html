@@ -56,7 +56,7 @@
     <div class="card shadow-sm">
       <div class="card-header bg-white"><strong>AI-аналіз</strong></div>
       <div class="card-body">
-        <pre style="white-space: pre-wrap;">{{ insights }}</pre>
+        {{ insights|safe }}
       </div>
     </div>
   {% elif form.is_bound %}

@@ -7,3 +7,4 @@ cryptography
 openai
 markdown2
 bleach
+django-apscheduler
